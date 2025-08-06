@@ -1,125 +1,201 @@
-class Game {
-    constructor(canvasId) {
-        this.canvas = document.getElementById(canvasId);
-        this.ctx = this.canvas.getContext('2d');
-        this.box = 20;
-        this.score = 0;
-        this.highScore = localStorage.getItem('highScore') || 0;
-        this.snake = [];
-        this.food = {};
-        this.d = '';
-        this.game = null;
+// Scene setup
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
 
-        this.init();
-    }
+// UI elements
+const scoreElement = document.createElement('div');
+scoreElement.style.position = 'absolute';
+scoreElement.style.top = '10px';
+scoreElement.style.left = '10px';
+scoreElement.style.color = 'white';
+scoreElement.style.fontFamily = 'Arial';
+scoreElement.style.fontSize = '24px';
+document.body.appendChild(scoreElement);
 
-    init() {
-        this.snake = [{ x: 10 * this.box, y: 10 * this.box }];
-        this.d = '';
-        this.score = 0;
-        this.spawnFood();
-        document.addEventListener('keydown', (e) => this.direction(e));
-        this.updateScoreDisplay();
-        if (this.game) clearInterval(this.game);
-        this.game = setInterval(() => this.draw(), 100);
-    }
+const gameOverElement = document.createElement('div');
+gameOverElement.style.position = 'absolute';
+gameOverElement.style.top = '50%';
+gameOverElement.style.left = '50%';
+gameOverElement.style.transform = 'translate(-50%, -50%)';
+gameOverElement.style.color = 'white';
+gameOverElement.style.fontFamily = 'Arial';
+gameOverElement.style.fontSize = '48px';
+gameOverElement.style.display = 'none';
+document.body.appendChild(gameOverElement);
 
-    spawnFood() {
-        this.food = {
-            x: Math.floor(Math.random() * (this.canvas.width / this.box)) * this.box,
-            y: Math.floor(Math.random() * (this.canvas.height / this.box)) * this.box
-        };
-    }
+const restartButton = document.createElement('button');
+restartButton.textContent = 'Play Again';
+restartButton.style.position = 'absolute';
+restartButton.style.top = '60%';
+restartButton.style.left = '50%';
+restartButton.style.transform = 'translate(-50%, -50%)';
+restartButton.style.display = 'none';
+restartButton.onclick = () => {
+    gameOverElement.style.display = 'none';
+    restartButton.style.display = 'none';
+    init();
+};
+document.body.appendChild(restartButton);
 
-    direction(event) {
-        if (event.keyCode == 37 && this.d != 'RIGHT') {
-            this.d = 'LEFT';
-        } else if (event.keyCode == 38 && this.d != 'DOWN') {
-            this.d = 'UP';
-        } else if (event.keyCode == 39 && this.d != 'LEFT') {
-            this.d = 'RIGHT';
-        } else if (event.keyCode == 40 && this.d != 'UP') {
-            this.d = 'DOWN';
-        }
-    }
 
-    collision(head, array) {
-        for (let i = 0; i < array.length; i++) {
-            if (head.x == array[i].x && head.y == array[i].y) {
-                return true;
-            }
-        }
-        return false;
-    }
+// Basic lighting
+const ambientLight = new THREE.AmbientLight(0x606060);
+scene.add(ambientLight);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+directionalLight.position.set(5, 10, 7.5);
+directionalLight.castShadow = true;
+scene.add(directionalLight);
 
-    draw() {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+// Game area
+const gameAreaSize = 20;
+const gameAreaGeometry = new THREE.BoxGeometry(gameAreaSize, gameAreaSize, gameAreaSize);
+const gameAreaMaterial = new THREE.MeshStandardMaterial({ color: 0x1e90ff, wireframe: true, transparent: true, opacity: 0.1 });
+const gameArea = new THREE.Mesh(gameAreaGeometry, gameAreaMaterial);
+gameArea.receiveShadow = true;
+scene.add(gameArea);
 
-        for (let i = 0; i < this.snake.length; i++) {
-            this.ctx.fillStyle = (i == 0) ? '#006400' : '#008000';
-            this.ctx.fillRect(this.snake[i].x, this.snake[i].y, this.box, this.box);
-            this.ctx.strokeStyle = '#004d00';
-            this.ctx.strokeRect(this.snake[i].x, this.snake[i].y, this.box, this.box);
-        }
+// Snake
+let snake = [];
+const snakeGeometry = new THREE.BoxGeometry(1, 1, 1);
+const snakeMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+let direction = new THREE.Vector3(1, 0, 0);
 
-        this.ctx.fillStyle = '#ff0000';
-        this.ctx.fillRect(this.food.x, this.food.y, this.box, this.box);
+// Food
+const foodGeometry = new THREE.SphereGeometry(0.5, 32, 32);
+const foodMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+let food = new THREE.Mesh(foodGeometry, foodMaterial);
+food.castShadow = true;
 
-        let snakeX = this.snake[0].x;
-        let snakeY = this.snake[0].y;
+// Game state
+let score = 0;
+let gameOver = false;
 
-        if (this.d == 'LEFT') snakeX -= this.box;
-        if (this.d == 'UP') snakeY -= this.box;
-        if (this.d == 'RIGHT') snakeX += this.box;
-        if (this.d == 'DOWN') snakeY += this.box;
+function init() {
+    // Reset snake
+    snake.forEach(segment => scene.remove(segment));
+    snake = [];
+    const head = new THREE.Mesh(snakeGeometry, snakeMaterial);
+    head.position.set(0, 0, 0);
+    head.castShadow = true;
+    snake.push(head);
+    scene.add(head);
 
-        if (snakeX == this.food.x && snakeY == this.food.y) {
-            this.score++;
-            this.spawnFood();
-            this.updateScoreDisplay();
-        } else {
-            this.snake.pop();
-        }
+    // Reset food
+    spawnFood();
 
-        let newHead = {
-            x: snakeX,
-            y: snakeY
-        };
-
-        if (snakeX < 0 || snakeY < 0 || snakeX >= this.canvas.width || snakeY >= this.canvas.height || this.collision(newHead, this.snake)) {
-            clearInterval(this.game);
-            this.gameOver();
-        }
-
-        this.snake.unshift(newHead);
-    }
-
-    updateScoreDisplay() {
-        document.getElementById('score').innerText = `Score: ${this.score}`;
-        document.getElementById('highScore').innerText = `High Score: ${this.highScore}`;
-    }
-
-    gameOver() {
-        if (this.score > this.highScore) {
-            this.highScore = this.score;
-            localStorage.setItem('highScore', this.highScore);
-        }
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.fillStyle = 'white';
-        this.ctx.font = '50px Arial';
-        this.ctx.fillText('Game Over', this.canvas.width / 2 - 120, this.canvas.height / 2 - 20);
-        this.ctx.font = '20px Arial';
-        this.ctx.fillText(`Your Score: ${this.score}`, this.canvas.width / 2 - 50, this.canvas.height / 2 + 20);
-
-        const restartButton = document.createElement('button');
-        restartButton.textContent = 'Play Again';
-        restartButton.onclick = () => {
-            document.body.removeChild(restartButton);
-            this.init();
-        };
-        document.body.appendChild(restartButton);
-    }
+    // Reset game state
+    score = 0;
+    updateScore();
+    gameOver = false;
+    direction.set(1, 0, 0);
+    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    animate();
 }
 
-window.onload = () => new Game('gameCanvas');
+function spawnFood() {
+    if (food) scene.remove(food);
+    food = new THREE.Mesh(foodGeometry, foodMaterial);
+    food.position.set(
+        Math.floor(Math.random() * gameAreaSize) - gameAreaSize / 2,
+        Math.floor(Math.random() * gameAreaSize) - gameAreaSize / 2,
+        Math.floor(Math.random() * gameAreaSize) - gameAreaSize / 2
+    );
+    scene.add(food);
+}
+
+function updateScore() {
+    scoreElement.textContent = `Score: ${score}`;
+}
+
+// Controls
+document.addEventListener('keydown', (event) => {
+    if (gameOver) return;
+    switch (event.key) {
+        case 'ArrowUp':
+            if (direction.y === 0) direction.set(0, 1, 0);
+            break;
+        case 'ArrowDown':
+            if (direction.y === 0) direction.set(0, -1, 0);
+            break;
+        case 'ArrowLeft':
+            if (direction.x === 0) direction.set(-1, 0, 0);
+            break;
+        case 'ArrowRight':
+            if (direction.x === 0) direction.set(1, 0, 0);
+            break;
+        case 'q':
+            if (direction.z === 0) direction.set(0, 0, -1);
+            break;
+        case 'a':
+            if (direction.z === 0) direction.set(0, 0, 1);
+            break;
+    }
+});
+
+camera.position.z = 30;
+let lastUpdateTime = 0;
+const updateInterval = 200; // ms
+let animationFrameId;
+
+function animate(currentTime = 0) {
+    animationFrameId = requestAnimationFrame(animate);
+
+    if (gameOver) {
+        gameOverElement.textContent = 'Game Over';
+        gameOverElement.style.display = 'block';
+        restartButton.style.display = 'block';
+        return;
+    }
+
+    const deltaTime = currentTime - lastUpdateTime;
+    if (deltaTime > updateInterval) {
+        lastUpdateTime = currentTime;
+
+        const head = snake[0];
+        const newHead = new THREE.Mesh(snakeGeometry, snakeMaterial);
+        newHead.position.copy(head.position).add(direction);
+        newHead.castShadow = true;
+
+        // Wall collision
+        if (Math.abs(newHead.position.x) > gameAreaSize / 2 || Math.abs(newHead.position.y) > gameAreaSize / 2 || Math.abs(newHead.position.z) > gameAreaSize / 2) {
+            gameOver = true;
+            return;
+        }
+
+        // Self collision
+        for (let i = 1; i < snake.length; i++) {
+            if (newHead.position.equals(snake[i].position)) {
+                gameOver = true;
+                return;
+            }
+        }
+
+        snake.unshift(newHead);
+        scene.add(newHead);
+
+        // Food collision
+        if (newHead.position.distanceTo(food.position) < 1) {
+            score++;
+            updateScore();
+            spawnFood();
+        } else {
+            const tail = snake.pop();
+            scene.remove(tail);
+        }
+    }
+
+    renderer.render(scene, camera);
+}
+
+// Handle window resizing
+window.addEventListener('resize', () => {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+});
+
+init();
