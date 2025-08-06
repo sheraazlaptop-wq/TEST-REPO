@@ -125,8 +125,8 @@ for (let i = 0; i < 10; i++) {
 let snake = [];
 const snakeSegmentGeometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
 const snakeMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-let direction = new THREE.Vector3(0, 0, -1);
-let velocity = new THREE.Vector3();
+let direction = new THREE.Vector3(0, 0, 1);
+let turnSpeed = 2.5;
 
 // Food
 const foodGeometry = new THREE.SphereGeometry(0.8, 32, 32);
@@ -172,8 +172,7 @@ function init() {
     gameOver = false;
     speedBoost = false;
     speedBoostTimer = 0;
-    direction.set(0, 0, -1);
-    velocity.set(0,0,0);
+    direction.set(0, 0, 1);
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     animate();
 }
@@ -206,8 +205,6 @@ function updateScore() {
 
 // Controls
 const moveDirection = {
-    forward: false,
-    backward: false,
     left: false,
     right: false
 };
@@ -215,14 +212,6 @@ const moveDirection = {
 document.addEventListener('keydown', (event) => {
     if (gameOver) return;
     switch (event.key) {
-        case 'w':
-        case 'ArrowUp':
-            moveDirection.forward = true;
-            break;
-        case 's':
-        case 'ArrowDown':
-            moveDirection.backward = true;
-            break;
         case 'a':
         case 'ArrowLeft':
             moveDirection.left = true;
@@ -236,14 +225,6 @@ document.addEventListener('keydown', (event) => {
 
 document.addEventListener('keyup', (event) => {
     switch (event.key) {
-        case 'w':
-        case 'ArrowUp':
-            moveDirection.forward = false;
-            break;
-        case 's':
-        case 'ArrowDown':
-            moveDirection.backward = false;
-            break;
         case 'a':
         case 'ArrowLeft':
             moveDirection.left = false;
@@ -255,8 +236,6 @@ document.addEventListener('keyup', (event) => {
     }
 });
 
-let lastUpdateTime = 0;
-const updateInterval = 100; // ms
 let animationFrameId;
 const clock = new THREE.Clock();
 
@@ -277,27 +256,26 @@ function animate() {
     }
 
     const head = snake[0];
+    const speed = speedBoost ? 20 : 10;
 
-    // Update velocity based on input
-    let speed = speedBoost ? 800.0 : 400.0;
-    velocity.x -= velocity.x * 10.0 * delta;
-    velocity.z -= velocity.z * 10.0 * delta;
+    // Update direction based on input
+    if (moveDirection.left) {
+        const axis = new THREE.Vector3(0, 1, 0);
+        direction.applyAxisAngle(axis, turnSpeed * delta);
+    }
+    if (moveDirection.right) {
+        const axis = new THREE.Vector3(0, 1, 0);
+        direction.applyAxisAngle(axis, -turnSpeed * delta);
+    }
 
-    direction.z = Number(moveDirection.forward) - Number(moveDirection.backward);
-    direction.x = Number(moveDirection.left) - Number(moveDirection.right);
-    direction.normalize();
-
-    if (moveDirection.forward || moveDirection.backward) velocity.z -= direction.z * speed * delta;
-    if (moveDirection.left || moveDirection.right) velocity.x -= direction.x * speed * delta;
-
-    head.position.x += velocity.x * delta;
-    head.position.z += velocity.z * delta;
-    head.rotation.y = Math.atan2(velocity.x, velocity.z);
+    // Move the head
+    head.position.add(direction.clone().multiplyScalar(speed * delta));
+    head.lookAt(head.position.clone().add(direction));
 
     // Update camera to follow the snake
-    const cameraOffset = new THREE.Vector3(0, 2, 5);
+    const cameraOffset = new THREE.Vector3(0, 5, -10);
     const cameraPosition = cameraOffset.clone().applyMatrix4(head.matrixWorld);
-    camera.position.copy(cameraPosition);
+    camera.position.lerp(cameraPosition, 0.1);
     camera.lookAt(head.position);
 
     // Speed boost timer
@@ -308,55 +286,51 @@ function animate() {
         }
     }
 
-    const currentTime = clock.getElapsedTime() * 1000;
-    if (currentTime - lastUpdateTime > updateInterval) {
-        lastUpdateTime = currentTime;
+    // Update snake body
+    for (let i = snake.length - 1; i > 0; i--) {
+        snake[i].position.copy(snake[i - 1].position);
+        snake[i].lookAt(snake[i-1].position);
+    }
 
-        const newHead = new THREE.Mesh(snakeSegmentGeometry, snakeMaterial);
-        newHead.position.copy(head.position);
-        newHead.rotation.copy(head.rotation);
-        newHead.castShadow = true;
 
-        // Obstacle collision
-        for (const obstacle of obstacles) {
-            if (newHead.position.distanceTo(obstacle.position) < 3) {
-                gameOverSound.play();
-                gameOver = true;
-                return;
-            }
-        }
-
-        // Self collision
-        for (let i = 1; i < snake.length; i++) {
-            if (newHead.position.distanceTo(snake[i].position) < 1) {
-                gameOverSound.play();
-                gameOver = true;
-                return;
-            }
-        }
-
-        snake.unshift(newHead);
-        scene.add(newHead);
-
-        // Food collision
-        if (newHead.position.distanceTo(food.position) < 1) {
-            score++;
-            updateScore();
-            eatSound.play();
-            spawnFood();
-        } else {
-            const tail = snake.pop();
-            scene.remove(tail);
-        }
-
-        // Power-up collision
-        if (newHead.position.distanceTo(powerUp.position) < 1) {
-            speedBoost = true;
-            speedBoostTimer = 5; // 5 seconds
-            powerUpSound.play();
-            spawnPowerUp();
+    // Obstacle collision
+    for (const obstacle of obstacles) {
+        if (head.position.distanceTo(obstacle.position) < 3) {
+            gameOverSound.play();
+            gameOver = true;
+            return;
         }
     }
+
+    // Self collision
+    for (let i = 1; i < snake.length; i++) {
+        if (head.position.distanceTo(snake[i].position) < 1) {
+            gameOverSound.play();
+            gameOver = true;
+            return;
+        }
+    }
+
+    // Food collision
+    if (head.position.distanceTo(food.position) < 1) {
+        score++;
+        updateScore();
+        eatSound.play();
+        spawnFood();
+        const newSegment = new THREE.Mesh(snakeSegmentGeometry, snakeMaterial);
+        newSegment.position.copy(snake[snake.length-1].position);
+        snake.push(newSegment);
+        scene.add(newSegment);
+    }
+
+    // Power-up collision
+    if (head.position.distanceTo(powerUp.position) < 1) {
+        speedBoost = true;
+        speedBoostTimer = 5; // 5 seconds
+        powerUpSound.play();
+        spawnPowerUp();
+    }
+
 
     renderer.render(scene, camera);
 }
